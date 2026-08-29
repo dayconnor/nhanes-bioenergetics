@@ -50,6 +50,16 @@ additionally adjusting for BMI.
   scoped as optional and was **not completed** — deprioritized given the
   project timeline, not attempted and abandoned. Would be the natural next
   step if this project is picked up again.
+- **Sensitivity check added post-hoc: total T3/total T4 ratio (`LBXTT3`/`LBXTT4`)
+  in place of free T3/free T4.** Peat's own writing is explicitly skeptical of
+  "free" hormone measurements as the right way to assess biological activity,
+  preferring total T3/T4 — this tests the same H1 claim with the metric the
+  framework itself considers more valid, using data already collected for H1
+  (no new files needed). **Result: same disconfirming direction** — coefficient
+  +2.77, significant in both age+sex (p=0.0054) and +BMI (p=0.0083) models,
+  barely moving between them, same pattern as the free-hormone version. The
+  finding is not an artifact of the free-vs-total measurement choice. See
+  `notebooks/02_h1_weighting.ipynb`.
 
 ## H2 — COMPETING MARKERS: free T3 vs TSH
 Among the study population, free T3 (LBXT3F) is a stronger predictor of

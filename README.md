@@ -78,6 +78,13 @@ mediator on the causal pathway between thyroid function and triglycerides.
 The coefficient barely moved between the two (14.9 to 14.2), indicating the
 association is **not substantially explained by body size**.
 
+A further sensitivity check tested **total T3/total T4** (`LBXTT3`/`LBXTT4`)
+in place of free T3/free T4, since Peat's own writing is explicitly skeptical
+of "free" hormone measurements as the right proxy for biological activity and
+prefers total hormone levels. Same result: coefficient +2.77, significant in
+both models (p=0.0054, p=0.0083), barely moving with BMI adjustment. The
+finding isn't an artifact of the free-vs-total measurement choice.
+
 ### H2 — Free T3 vs. TSH as predictors of metabolic syndrome
 Compared via three pre-registered metrics: AUC (0.832 vs. 0.830, visually 
 indistinguishable on the ROC curve), AIC (a modest edge to
