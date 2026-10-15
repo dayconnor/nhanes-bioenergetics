@@ -15,6 +15,10 @@ framework predicts. A post-hoc exploratory section (H5) tests two "practical"
 markers the framework's own proponents prefer over serum thyroid tests; it
 doesn't change this picture.
 
+This README is the full technical write-up. A shorter, more personal account
+of the project is on my site:
+[connor.day/projects/bioenergetics](https://www.connor.day/projects/bioenergetics).
+
 ## Data
 
 [NHANES](https://www.cdc.gov/nchs/nhanes/) (National Health and Nutrition
@@ -223,13 +227,22 @@ docs/figures/       Exported presentation-quality charts (PNG), sourced from
 
 Python, pandas, Polars, [`svy`](https://svylab.com) (survey-weighted
 regression), pyreadstat, statsmodels, seaborn/matplotlib, scikit-learn (AUC/
-ROC), SQLite (planned), Streamlit (dashboard, planned).
+ROC).
 
 ## Status
 
-All four hypotheses, plus the H5 exploratory extension, are analyzed,
-visualized, and multiple-comparison corrected, with presentation-quality
-summary charts (`docs/figures/`, built with a validated colorblind-safe
-palette). Remaining work: an interactive dashboard, and a public write-up
-site (lower priority than the analysis itself, per this project's own
-priorities).
+**Complete. No further development is planned.** All four pre-registered
+hypotheses, plus the H5 exploratory extension, are analyzed, visualized, and
+multiple-comparison corrected, with presentation-quality summary charts
+(`docs/figures/`, built with a validated colorblind-safe palette). The
+technical write-up is this README; an informal write-up is at
+[connor.day/projects/bioenergetics](https://www.connor.day/projects/bioenergetics).
+
+Items from the original plan that were intentionally dropped:
+
+- **SQL database layer.** The analytic samples are small, one-per-hypothesis
+  tables joined on a single key (`SEQN`); a database would add a pipeline
+  stage without doing any work pandas isn't already doing.
+- **Interactive dashboard.** The findings are a fixed set of four tests plus
+  an exploratory section; the static figures and tables above communicate
+  them fully.
