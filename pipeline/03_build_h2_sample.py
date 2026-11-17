@@ -4,18 +4,14 @@ import numpy as np
 import pandas as pd
 import pyreadstat
 
+from nhanes_helpers import (
+    antidiabetic_classes, antihypertensive_classes, implausible_free_t3, merge_drug_classes,
+    mets_lipid_ingredients, seqns_on, thyroid_med_classes, thyroid_subsample_weight,
+)
+
 repo_root = pathlib.Path(__file__).resolve().parents[1]
 raw_dir = repo_root / 'data' / 'raw'
 processed_dir = repo_root / 'data' / 'processed'
-
-thyroid_med_categories = ['THYROID HORMONES', 'ANTITHYROID AGENTS']
-lipid_lowering_drugs = ['CLOFIBRATE', 'GEMFIBROZIL', 'FENOFIBRATE', 'FENOFIBRIC ACID', 'NIACIN']
-antihypertensive_categories = [
-    'ANGIOTENSIN CONVERTING ENZYME (ACE) INHIBITORS', 'ANGIOTENSIN II INHIBITORS',
-    'ANGIOTENSIN RECEPTOR BLOCKERS AND NEPRILYSIN INHIBITORS', 'ANTIHYPERTENSIVE COMBINATIONS',
-    'BETA-ADRENERGIC BLOCKING AGENTS', 'CALCIUM CHANNEL BLOCKING AGENTS', 'DIURETICS',
-]
-antidiabetic_categories = ['ANTIDIABETIC AGENTS']
 
 cycles = {
     '2007-2008': {
@@ -107,17 +103,17 @@ def build_metabolic_syndrome_flag(df):
 
 
 def medication_seqns(rxq_rx_df, rxq_drug_df):
-    merged = pd.merge(left=rxq_rx_df, right=rxq_drug_df, on='RXDDRGID', how='left', suffixes=('_rx', '_drug'))
+    rx_merged = merge_drug_classes(rxq_rx_df, rxq_drug_df)
 
-    thyroid_med = set(merged.loc[merged['RXDDCN1B'].isin(thyroid_med_categories), 'SEQN'])
-    antihypertensive = set(merged.loc[merged['RXDDCN1B'].isin(antihypertensive_categories), 'SEQN'])
-    antidiabetic = set(merged.loc[merged['RXDDCN1B'].isin(antidiabetic_categories), 'SEQN'])
-    lipid_lowering = set(merged.loc[merged['RXDDRUG_drug'].isin(lipid_lowering_drugs), 'SEQN'])
+    thyroid_med = seqns_on(rx_merged, classes=thyroid_med_classes)
+    antihypertensive = seqns_on(rx_merged, classes=antihypertensive_classes)
+    antidiabetic = seqns_on(rx_merged, classes=antidiabetic_classes)
+    lipid_lowering = seqns_on(rx_merged, ingredients=mets_lipid_ingredients)
 
     return thyroid_med, antihypertensive, antidiabetic, lipid_lowering
 
 
-def load_and_filter_cycle(paths, rxq_drug_df):
+def load_and_filter_cycle(cycle_label, paths, rxq_drug_df):
     thyroid_df, _ = pyreadstat.read_xport(str(paths['thyroid_path']))
     trigly_df, _ = pyreadstat.read_xport(str(paths['trigly_path']))
     demo_df, _ = pyreadstat.read_xport(str(paths['demo_path']))
@@ -137,6 +133,9 @@ def load_and_filter_cycle(paths, rxq_drug_df):
     analytic_df = analytic_df[analytic_df['WTSAF2YR'] > 0]
     analytic_df = analytic_df[analytic_df['RIDAGEYR'] >= 20]
     analytic_df = analytic_df[analytic_df['RIDEXPRG'] != 1]
+    # Flagged rather than dropped so notebooks/09_robustness_checks.ipynb can
+    # show results with the record retained; every other notebook drops it.
+    analytic_df = analytic_df.assign(ft3_implausible=implausible_free_t3(analytic_df))
 
     analytic_df = pd.merge(left=analytic_df, right=mcq_df, on='SEQN', how='left')
     analytic_df = analytic_df[analytic_df['MCQ160M'] != 1]
@@ -158,6 +157,10 @@ def load_and_filter_cycle(paths, rxq_drug_df):
     analytic_df['metabolic_syndrome'], components = build_metabolic_syndrome_flag(analytic_df)
     analytic_df = pd.concat([analytic_df, components.add_prefix('mets_')], axis=1)
 
+    # Fasting-subsample outcome (triglycerides, glucose): WTSAF2YR base weight,
+    # adjusted for the thyroid subsample in 2009-2012 (see nhanes_helpers.py).
+    analytic_df['wt_thyroid_2yr'] = thyroid_subsample_weight(analytic_df, cycle_label, 'WTSAF2YR')
+
     return analytic_df
 
 
@@ -166,7 +169,7 @@ def build_h2_sample():
 
     pooled_frames = []
     for cycle_label, paths in cycles.items():
-        analytic_df = load_and_filter_cycle(paths, rxq_drug_df)
+        analytic_df = load_and_filter_cycle(cycle_label, paths, rxq_drug_df)
         ambiguous = analytic_df['metabolic_syndrome'].isna().sum()
         print(f"{cycle_label}: n = {len(analytic_df)}, metabolic_syndrome ambiguous/excluded = {ambiguous}")
         pooled_frames.append(analytic_df.assign(cycle=cycle_label))

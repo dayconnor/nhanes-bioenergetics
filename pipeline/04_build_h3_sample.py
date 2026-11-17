@@ -3,11 +3,11 @@ import pathlib
 import pandas as pd
 import pyreadstat
 
+from nhanes_helpers import implausible_free_t3, merge_drug_classes, seqns_on, thyroid_med_classes, thyroid_subsample_weight
+
 repo_root = pathlib.Path(__file__).resolve().parents[1]
 raw_dir = repo_root / 'data' / 'raw'
 processed_dir = repo_root / 'data' / 'processed'
-
-thyroid_med_categories = ['THYROID HORMONES', 'ANTITHYROID AGENTS']
 
 # H3 only has CRP in 2007-2008 and 2009-2010.
 cycles = {
@@ -30,7 +30,7 @@ cycles = {
 }
 
 
-def load_and_filter_cycle(paths, rxq_drug_df):
+def load_and_filter_cycle(cycle_label, paths, rxq_drug_df):
     thyroid_df, _ = pyreadstat.read_xport(str(paths['thyroid_path']))
     crp_df, _ = pyreadstat.read_xport(str(paths['crp_path']))
     demo_df, _ = pyreadstat.read_xport(str(paths['demo_path']))
@@ -49,15 +49,21 @@ def load_and_filter_cycle(paths, rxq_drug_df):
     analytic_df = merged_df.dropna(subset=['LBXT3F', 'LBXCRP'])
     analytic_df = analytic_df[analytic_df['RIDAGEYR'] >= 20]
     analytic_df = analytic_df[analytic_df['RIDEXPRG'] != 1]
+    # Flagged rather than dropped so notebooks/09_robustness_checks.ipynb can
+    # show results with the record retained; every other notebook drops it.
+    analytic_df = analytic_df.assign(ft3_implausible=implausible_free_t3(analytic_df))
 
     analytic_df = pd.merge(left=analytic_df, right=mcq_df, on='SEQN', how='left')
     analytic_df = analytic_df[analytic_df['MCQ160M'] != 1]
 
-    rxq_merge = pd.merge(left=rxq_rx_df, right=rxq_drug_df, on='RXDDRGID', how='left')
-    thyroid_med_seqns = rxq_merge[rxq_merge['RXDDCN1B'].isin(thyroid_med_categories)]['SEQN'].unique()
+    rx_merged = merge_drug_classes(rxq_rx_df, rxq_drug_df)
+    thyroid_med_seqns = seqns_on(rx_merged, classes=thyroid_med_classes)
     analytic_df = analytic_df[~analytic_df['SEQN'].isin(thyroid_med_seqns)]
 
     analytic_df = pd.merge(left=analytic_df, right=bmx_df[['SEQN', 'BMXBMI']], on='SEQN', how='left')
+
+    # WTMEC2YR in 2007-2008, WTSA2YR (thyroid subsample) in 2009-2010.
+    analytic_df['wt_thyroid_2yr'] = thyroid_subsample_weight(analytic_df, cycle_label, 'WTMEC2YR')
 
     return analytic_df
 
@@ -67,7 +73,7 @@ def build_h3_sample():
 
     pooled_frames = []
     for cycle_label, paths in cycles.items():
-        analytic_df = load_and_filter_cycle(paths, rxq_drug_df)
+        analytic_df = load_and_filter_cycle(cycle_label, paths, rxq_drug_df)
         print(f"{cycle_label}: n = {len(analytic_df)}")
         pooled_frames.append(analytic_df.assign(cycle=cycle_label))
 

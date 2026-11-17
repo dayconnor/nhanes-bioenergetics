@@ -3,11 +3,11 @@ import pathlib
 import pandas as pd
 import pyreadstat
 
+from nhanes_helpers import antihyperlipidemic_classes, beta_blocker_classes, beta_blocker_subclasses, merge_drug_classes, seqns_on
+
 repo_root = pathlib.Path(__file__).resolve().parents[1]
 raw_dir = repo_root / 'data' / 'raw'
 processed_dir = repo_root / 'data' / 'processed'
-
-beta_blocker_categories = ['BETA-ADRENERGIC BLOCKING AGENTS']
 
 # H5 (exploratory, post-hoc): pulse rate and total cholesterol as
 # community-preferred "functional" thyroid markers, tested against the
@@ -32,11 +32,6 @@ cycles = {
 }
 
 
-def beta_blocker_seqns(rxq_rx_df, rxq_drug_df):
-    merged = pd.merge(left=rxq_rx_df, right=rxq_drug_df, on='RXDDRGID', how='left')
-    return set(merged.loc[merged['RXDDCN1B'].isin(beta_blocker_categories), 'SEQN'])
-
-
 def build_cycle_markers(paths, rxq_drug_df):
     bpx_df, _ = pyreadstat.read_xport(str(paths['bpx_path']))
     tchol_df, _ = pyreadstat.read_xport(str(paths['tchol_path']))
@@ -44,8 +39,15 @@ def build_cycle_markers(paths, rxq_drug_df):
 
     markers_df = pd.merge(left=bpx_df[['SEQN', 'BPXPLS']], right=tchol_df[['SEQN', 'LBXTC']], on='SEQN', how='outer')
 
-    beta_blocker_users = beta_blocker_seqns(rxq_rx_df, rxq_drug_df)
+    rx_merged = merge_drug_classes(rxq_rx_df, rxq_drug_df)
+    beta_blocker_users = seqns_on(rx_merged, classes=beta_blocker_classes, subclasses=beta_blocker_subclasses)
     markers_df['on_beta_blocker'] = markers_df['SEQN'].isin(beta_blocker_users)
+
+    # Cholesterol is only meaningful as a thyroid marker when it is not being
+    # lowered pharmacologically, so cholesterol models exclude anyone on any
+    # antihyperlipidemic agent (the same broad class H4 uses).
+    antihyperlipidemic_users = seqns_on(rx_merged, classes=antihyperlipidemic_classes)
+    markers_df['on_antihyperlipidemic'] = markers_df['SEQN'].isin(antihyperlipidemic_users)
 
     return markers_df
 
