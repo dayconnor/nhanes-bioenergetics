@@ -1,210 +1,244 @@
-# Project Bioenergetics — Hypotheses
+# Project Bioenergetics hypotheses
 
-Central question: Does Ray Peat's conversion-centric model of thyroid function hold up against national health data?
+Central question. Does Ray Peat's conversion-centric model of thyroid function
+hold up against national health data?
 
-This document is the pre-registered methods record: hypotheses and exclusion
-criteria as decided before/during analysis. Every item below was an open
-question at some point during the project; all are now resolved, with a
-pointer to where each decision is actually implemented. Results and
-interpretation live in [`README.md`](../README.md), not here.
+This document is the methods record for the project. It sets out the four
+pre-specified hypotheses, their falsification criteria, and the exclusion
+rules, together with a pointer to where each decision is implemented. The
+hypotheses and criteria were set before the models were fit. This document
+was committed after the analyses were complete, however, so it is not a
+timestamped pre-registration. Results are summarized here for reference, and
+the full interpretation is in [`README.md`](../README.md).
 
----
+## Study population
 
-## Study population (applies to all hypotheses unless noted)
-Non-pregnant adults (age ≥ 20), not taking thyroid medication, no self-reported
-thyroid disease.
-Cycles: NHANES 2007–2008, 2009–2010, 2011–2012 (the thyroid-panel cycles).
+These rules apply to all hypotheses unless noted. The population is
+non-pregnant adults aged 20 and older who are not taking thyroid medication
+and do not report thyroid disease, drawn from NHANES 2007-2008, 2009-2010, and
+2011-2012 (the cycles with a thyroid panel).
 
-Exclusion variables (confirmed against real data, not assumed):
-- Age: `RIDAGEYR >= 20`
-- Pregnancy: `RIDEXPRG != 1` (DEMO; populated only for women aged 20-44, `NaN`
-  for everyone else — `!=` correctly treats `NaN` as "not pregnant" since
-  `NaN != 1` evaluates `True` in pandas)
-- Self-reported thyroid disease: `MCQ160M != 1` (MCQ, "ever told you had a
-  thyroid problem")
-- Thyroid medication: any drug classified `THYROID HORMONES` or
-  `ANTITHYROID AGENTS` in `RXQ_DRUG`'s `RXDDCN1B`, joined via `RXQ_RX`
+The exclusion variables were confirmed against the data.
 
-Implemented identically in `pipeline/02_build_h1_sample.py`,
-`03_build_h2_sample.py`, `04_build_h3_sample.py`, `05_build_h4_sample.py`.
+- Age is `RIDAGEYR >= 20`.
+- Pregnancy is `RIDEXPRG != 1`. The DEMO variable is populated only for women
+  aged 20 to 44 and is missing for everyone else, and `NaN != 1` evaluates as
+  true in pandas, so missing values are correctly treated as not pregnant.
+- Self-reported thyroid disease is `MCQ160M != 1` ("ever told you had a
+  thyroid problem").
+- Thyroid medication is any drug in the `THYROID HORMONES` or
+  `ANTITHYROID AGENTS` class, from `RXQ_RX` joined to `RXQ_DRUG`.
+- One record (SEQN 53952) is excluded as a laboratory or recording error. The
+  rule is free T3 above 8.4 pg/mL (twice the upper reference limit) with
+  total T3 at or below 200 ng/dL, which cannot both be true physiologically.
+  The pipeline flags the record (`ft3_implausible`) and the notebooks drop it,
+  so that `notebooks/09_robustness_checks.ipynb` can report results with it
+  retained.
 
----
+Medication classes are matched against all four category slots in `RXQ_DRUG`
+(`RXDDCN1B` to `RXDDCN4B`), and against the third-level subclass where a class
+is only recorded there, so that combination products are classified
+correctly. The shared rules are in `pipeline/nhanes_helpers.py` and are used
+by `pipeline/02_build_h1_sample.py` through `pipeline/06_build_h5_markers.py`.
 
-## H1 — FLAGSHIP: conversion → triglycerides
-Among the study population, a higher free-T3-to-free-T4 ratio (LBXT3F / LBXT4F)
-is associated with LOWER fasting triglycerides (LBXTR), independent of age and sex
-— and the body-size-independent portion of that association is tested by
-additionally adjusting for BMI.
+## Survey weights
 
-- Two models, reported as different questions, NOT one:
-    (a) adjusted for age + sex → TOTAL association (includes path through body fat)
-    (b) also adjusted for BMI -> body-size-INDEPENDENT association
-- Sample/weight: triglycerides = FASTING subsample → `WTSAF2YR`, pooled by
-  dividing by 3 (three cycles combined).
-- Falsified if: the ratio's coefficient on triglycerides is null or positive
+The thyroid panel covered the full examination sample in 2007-2008 and a
+random one-third subsample from 2009-2010 onward, which CDC weights with
+`WTSA2YR`. Each analytic sample carries a thyroid-adjusted two-year weight,
+`wt_thyroid_2yr`, which is pooled by dividing by the number of cycles.
+
+- Non-fasting outcomes (H3, H4) use `WTMEC2YR` in 2007-2008 and `WTSA2YR`
+  thereafter.
+- Fasting outcomes (H1, H2) use `WTSAF2YR` in 2007-2008 and
+  `WTSAF2YR * WTSA2YR / WTMEC2YR` thereafter. NHANES publishes no weight for
+  the intersection of the fasting and thyroid subsamples, so this
+  approximation treats the two subsamples as independent.
+
+## H1. Conversion and triglycerides (flagship)
+
+Among the study population, a higher free-T3-to-free-T4 ratio
+(`LBXT3F / LBXT4F`) is associated with lower fasting triglycerides (`LBXTR`),
+independent of age and sex. The association independent of body size is
+tested by additionally adjusting for BMI.
+
+- Two models answer different questions. Model (a) adjusts for age and sex and
+  estimates the total association, including any path through body fat.
+  Model (b) adds BMI and estimates the association independent of body size.
+- Triglycerides are measured in the fasting subsample, so the base weight is
+  `WTSAF2YR`.
+- Falsified if the ratio's coefficient on triglycerides is null or positive
   after adjustment.
-- **Result: falsified.** Coefficient positive and significant in both models
-  (barely moved between them, +14.9 → +14.2), survives multiple-comparison
-  correction. See `pipeline/02_build_h1_sample.py`, `notebooks/02_h1_weighting.ipynb`.
-- Waist-circumference robustness swap (BMXWAIST in place of BMXBMI) was
-  scoped as optional and was **not completed** — deprioritized given the
-  project timeline, not attempted and abandoned. Would be the natural next
-  step if this project is picked up again.
-- **Sensitivity check added post-hoc: total T3/total T4 ratio (`LBXTT3`/`LBXTT4`)
-  in place of free T3/free T4.** Peat's own writing is explicitly skeptical of
-  "free" hormone measurements as the right way to assess biological activity,
-  preferring total T3/T4 — this tests the same H1 claim with the metric the
-  framework itself considers more valid, using data already collected for H1
-  (no new files needed). **Result: same disconfirming direction** — coefficient
-  +2.77, significant in both age+sex (p=0.0054) and +BMI (p=0.0083) models,
-  barely moving between them, same pattern as the free-hormone version. The
-  finding is not an artifact of the free-vs-total measurement choice. See
+- Result. Falsified. The coefficient is positive and significant in both
+  models (+20.3 in model a and +19.7 in model b, both p < 0.001) and survives
+  multiple-comparison correction. See `pipeline/02_build_h1_sample.py` and
   `notebooks/02_h1_weighting.ipynb`.
+- A robustness check replacing BMI with waist circumference (`BMXWAIST`) was
+  scoped as optional and was not completed because of the project timeline.
+  It would be the natural next step if the project is resumed.
+- A post-hoc sensitivity check replaced free T3 and free T4 with total T3 and
+  total T4 (`LBXTT3`/`LBXTT4`). Peat's writing is skeptical of free hormone
+  measurements and favors total hormone levels, so this tests the same claim
+  with the measure the framework considers more valid. The result has the
+  same disconfirming direction, with a coefficient of +2.97 in model (a) and
+  +2.99 in model (b) (p = 0.024 in both). See `notebooks/02_h1_weighting.ipynb`.
 
-## H2 — COMPETING MARKERS: free T3 vs TSH
-Among the study population, free T3 (LBXT3F) is a stronger predictor of
-metabolic-syndrome status than TSH (LBXTSH1) is, both adjusted for age, sex, BMI.
+## H2. Competing markers, free T3 and TSH
 
-- "Stronger" defined by three metrics: AUC (headline), AIC (corroboration),
-  standardized coefficient (mechanism — both predictors z-scored before
-  fitting so coefficients are directly comparable).
-- Both models run on the identical n (verified explicitly, not assumed —
-  both `LBXT3F` and `LBXTSH1` required non-null by the sample-building step).
-- Weighted throughout (not left as unweighted future work — `svy` was
-  already in place by the time H2 was built).
-- Falsified if: TSH's AUC is equal to or higher than free T3's.
-- **Result: ambiguous, not falsified by the literal AUC test** (0.8323 vs
-  0.8304 — free T3 higher, but the margin is thin enough that no formal
-  test of AUC difference was computed). AIC modestly favors free T3. The
-  standardized-coefficient comparison cuts the other way: free T3's point
-  estimate is larger but not significant (p=0.067); TSH's smaller effect is
-  significant (p=0.028). See `pipeline/03_build_h2_sample.py`,
+Among the study population, free T3 (`LBXT3F`) is a stronger predictor of
+metabolic syndrome than TSH (`LBXTSH1`), with both adjusted for age, sex, and
+BMI.
+
+- "Stronger" is defined by three metrics. AUC is the headline metric, AIC
+  provides corroboration, and the standardized coefficient addresses
+  mechanism. Both predictors are z-scored before fitting so that their
+  coefficients are directly comparable.
+- Both models run on the same participants. The sample-building step requires
+  both `LBXT3F` and `LBXTSH1` to be present.
+- All models are survey weighted.
+- Falsified if TSH's AUC is equal to or higher than free T3's.
+- Result. Supported as stated, with a small margin. Free T3 leads on all
+  three metrics. Its AUC is 0.829 against 0.824 for TSH, its AIC is lower
+  (3,275 against 3,307), and its standardized coefficient is larger and
+  significant (0.38, p < 0.001) where TSH's is not (0.16, p = 0.058). Neither
+  marker adds much to age, sex, and BMI alone (AUC 0.823). The free T3
+  coefficient is positive, so higher free T3 is associated with higher odds
+  of metabolic syndrome, which runs against the framework's premise. No formal
+  test of the AUC difference was computed. Because the AUC criterion has no
+  p-value, the free T3 coefficient represents H2 in the multiple-comparison
+  correction. See `pipeline/03_build_h2_sample.py` and
   `notebooks/03_h2_weighting.ipynb`.
 
-## H3: free T3 -> inflammation
-Among the study population, LOWER free T3 (LBXT3F) is associated with HIGHER
-C-reactive protein (LBXCRP), independent of age, sex, and BMI.
+## H3. Free T3 and inflammation
 
-- DATA CONSTRAINT: CRP (LBXCRP) exists ONLY in 2007–2008 and 2009–2010. H3
-  runs on a 2-cycle sample, pooled weight `WTMEC2YR / 2` (not /3), full MEC
-  exam sample (no fasting-subsample filter — CRP is non-fasting).
-- CRP is heavily right-skewed (mean 0.42, median 0.19, max 20 mg/dL); primary
-  model uses `log(LBXCRP)` (min=0.01, safely positive, no zero-handling
-  needed). Raw-CRP model kept only as a less-trustworthy sensitivity check,
-  not co-equal with the log model.
-- Interpretation caveat (CENTRAL to this one): reverse causation via
-  non-thyroidal illness / "euthyroid sick" syndrome would predict a spurious
-  NEGATIVE correlation — it does not straightforwardly explain the POSITIVE
-  finding actually observed, so no causal story is claimed in either
-  direction.
-- Falsified if: the fT3–CRP association is null or positive after adjustment.
-- **Result: significant and positive (wrong direction) on the primary
-  log-CRP model (p=0.027 raw) — but does not survive FDR correction
-  (adjusted p=0.054) once tested alongside H1/H2/H4.** Report as "suggestive
-  but not statistically robust," not "falsified with significance." See
-  `pipeline/04_build_h3_sample.py`, `notebooks/04_h3_weighting.ipynb`.
+Among the study population, lower free T3 (`LBXT3F`) is associated with higher
+C-reactive protein (`LBXCRP`), independent of age, sex, and BMI.
 
-## H4 — THE CHOLESTEROL CLAIM
-Among the study population AND excluding lipid-lowering medication users, higher
-free T3 (LBXT3F) is associated with LOWER total cholesterol (LBXTC), independent
-of age, sex, and BMI.
+- CRP exists only in 2007-2008 and 2009-2010, so H3 runs on a two-cycle sample
+  pooled by dividing by 2. CRP is a non-fasting measure, so no fasting
+  restriction applies.
+- CRP is heavily right-skewed (mean 0.42, median 0.19, maximum 20 mg/dL). The
+  primary model uses `log(LBXCRP)`, which needs no handling of zeros because
+  the minimum is 0.01. A model on untransformed CRP is kept only as a less
+  reliable sensitivity check.
+- The central interpretive caveat is reverse causation through non-thyroidal
+  illness ("euthyroid sick" syndrome). That mechanism would produce a
+  spurious negative correlation and does not explain a positive one, so no
+  causal interpretation is offered in either direction.
+- Falsified if the free T3 association with CRP is null or positive after
+  adjustment.
+- Result. Falsified. The association is positive and significant in the
+  primary log-CRP model (0.23 per pg/mL, p = 0.003) and survives correction
+  (FDR-adjusted p = 0.004, Bonferroni-adjusted p = 0.012). The untransformed
+  model is null (p = 0.63). With the excluded record retained, the primary
+  association is not significant (p = 0.072). See
+  `pipeline/04_build_h3_sample.py` and `notebooks/04_h3_weighting.ipynb`.
 
-- Sample/weight: total cholesterol is NON-fasting → full MEC sample,
-  `WTMEC2YR`, pooled /3, larger n than H1/H2.
-- **Lipid-lowering medication, resolved: the broad definition — everyone on
-  any drug in `RXQ_DRUG`'s `ANTIHYPERLIPIDEMIC AGENTS` category** (statins,
-  fibrates, ezetimibe, bile acid sequestrants, PCSK9 inhibitors), not statins
-  alone. Chosen for consistency with the thyroid-med exclusion's scope and to
-  avoid hand-picking a subset of drug classes by their own presumed potency —
-  a pre-specifiable category-level rule is more defensible than a curated list.
-  Accepted trade-off: narrows generalizability further than a statins-only
-  exclusion would (older, sicker, more medicated population excluded),
-  stated explicitly.
-- PRIMARY model excludes these users (n=6,311). SENSITIVITY check keeps them,
-  adjusts for an `on_lipid_lowering` covariate (n=7,697).
-- Medication merge (multi-row-per-SEQN `RXQ_RX` → one per-person flag):
-  implemented once, reused across the thyroid-med, MetS treatment-clause, and
-  this lipid-lowering exclusion — same pattern each time.
-- Falsified if: the fT3 coefficient on total cholesterol is null or positive
-  after adjustment.
-- **Result: null under both specifications** (primary p=0.432, sensitivity
-  p=0.235, both positive-direction) — a robust null, not a fragile one. See
-  `pipeline/05_build_h4_sample.py`, `notebooks/05_h4_weighting.ipynb`.
+## H4. The cholesterol claim
 
----
+Among the study population, excluding users of lipid-lowering medication,
+higher free T3 (`LBXT3F`) is associated with lower total cholesterol
+(`LBXTC`), independent of age, sex, and BMI.
 
-## Metabolic syndrome flag (needed for H2)
+- Total cholesterol is a non-fasting measure taken in the full examination
+  sample, so H4 has a larger sample than H1 and H2.
+- Lipid-lowering medication is defined broadly as any drug in the
+  `ANTIHYPERLIPIDEMIC AGENTS` class (statins, fibrates, ezetimibe, bile acid
+  sequestrants, niacin, and PCSK9 inhibitors) rather than statins alone. A
+  category-level rule that can be stated in advance is more defensible than a
+  hand-picked list of drug classes, and it matches the scope of the thyroid
+  medication exclusion. The trade-off is reduced generalizability, because an
+  older, sicker, and more medicated group is excluded.
+- The primary model excludes these users (n = 6,283). The sensitivity model
+  keeps them and adjusts for an `on_lipid_lowering` covariate (n = 7,696).
+- Falsified if the free T3 coefficient on total cholesterol is null or
+  positive after adjustment.
+- Result. Falsified. The primary model is positive and not significant
+  (4.5 mg/dL per pg/mL, p = 0.094). The sensitivity model is positive and
+  significant (6.0 mg/dL per pg/mL, p = 0.021). The positive association is
+  significant among euthyroid participants but absent in 2007-2008 alone, so
+  it is not stable. See `pipeline/05_build_h4_sample.py` and
+  `notebooks/05_h4_weighting.ipynb`.
 
-Definition: 2009 Harmonized criteria (Alberti et al., *Circulation* 2009,
-verified directly against the primary source, not assumed), using the AHA/NHLBI
-(ATP III) waist cutpoints. Positive = meets ≥ 3 of 5 criteria.
+## Metabolic syndrome flag (used in H2)
 
-  1. Waist: ≥102 cm (men) / ≥88 cm (women)          [BMXWAIST, sex-branch on RIAGENDR]
-  2. Triglycerides: ≥150 mg/dL                       [LBXTR — fasting]
-  3. HDL: <40 (men) / <50 (women) mg/dL              [LBDHDD, sex-branch]
-  4. Blood pressure: systolic ≥130 OR diastolic ≥85  [BPX — mean of up to 4 readings; a
-     diastolic reading of exactly 0 is NHANES's "no audible sound" code, excluded
-     from the average, not treated as a real value]
-  5. Fasting glucose: ≥100 mg/dL                     [LBXGLU — fasting]
+The definition follows the 2009 Harmonized criteria (Alberti et al.,
+*Circulation* 2009, checked against the primary source) with the AHA/NHLBI
+(ATP III) waist cutpoints. A participant is positive if they meet at least
+three of five criteria.
 
-**Treatment clauses (resolved — confirmed directly from the Alberti et al.
-Table 1):** drug treatment counts as an alternate positive
-indicator for triglycerides/HDL (fibrates + niacin), blood pressure (any antihypertensive class), and
-glucose (any antidiabetic agent, including insulin). No treatment clause
-exists for waist circumference. Drug categories implemented in
-`pipeline/03_build_h2_sample.py` (`THYROID_MED_CATEGORIES`,
-`LIPID_LOWERING_DRUGS`, `ANTIHYPERTENSIVE_CATEGORIES`, `ANTIDIABETIC_CATEGORIES`).
+1. Waist of at least 102 cm in men or 88 cm in women (`BMXWAIST`, by
+   `RIAGENDR`).
+2. Fasting triglycerides of at least 150 mg/dL (`LBXTR`).
+3. HDL below 40 mg/dL in men or 50 mg/dL in women (`LBDHDD`, by `RIAGENDR`).
+4. Systolic blood pressure of at least 130 or diastolic of at least 85 mmHg
+   (`BPX`, the mean of up to four readings). A diastolic reading of exactly 0
+   is NHANES's code for no audible sound and is excluded from the mean.
+5. Fasting glucose of at least 100 mg/dL (`LBXGLU`).
 
-**Missing-component logic (resolved):** rather than excluding anyone with any
-missing component, each person is classified as definite-positive (≥3 known
-positives already), definite-negative (even a best-case assumption on missing
-components can't reach 3), or ambiguous (could go either way given
-what's missing). Only the ambiguous group is excluded. In practice this is
-56 of 3,459 people (1.6%). Implemented as `flag_component()` /
-`build_metabolic_syndrome_flag()` in `pipeline/03_build_h2_sample.py`.
+Drug treatment counts as an alternate positive indicator, as specified in
+Table 1 of Alberti et al. Fibrates and nicotinic acid count for the
+triglyceride and HDL criteria, matched by ingredient so that combination
+products are included. Any antihypertensive class counts for blood pressure,
+including ACE inhibitors, angiotensin II inhibitors, beta-blockers, calcium
+channel blockers, diuretics, aldosterone receptor antagonists, renin
+inhibitors, vasodilators, centrally and peripherally acting antiadrenergic
+agents, and antihypertensive combinations. Any antidiabetic agent, including
+insulin, counts for glucose. Waist circumference has no treatment clause.
 
----
+Participants with missing components are not excluded outright. Each is
+classified as definite positive (at least three known positives), definite
+negative (unable to reach three even if every missing component were
+positive), or ambiguous. Only the ambiguous group is excluded, which in
+practice is 57 of 3,458 participants (1.6%). This is implemented in
+`flag_component()` and `build_metabolic_syndrome_flag()` in
+`pipeline/03_build_h2_sample.py`.
 
-## H5 — Exploratory: "practical" thyroid markers (post-hoc, not pre-registered)
+## H5. Exploratory analysis of practical thyroid markers (post-hoc)
 
-Added after H1-H4 were already analyzed, in response to the Peat-sphere objection that serum free T3/T4/TSH are poor proxies for
-cellular thyroid status, and that resting pulse rate, basal body temperature,
-total cholesterol, and prolactin are better. Body temperature and prolactin
-are not available in these NHANES cycles; pulse rate (`BPXPLS`) and total
-cholesterol (`LBXTC`) are, so those two are tested against the same three
-outcomes as H1-H3 (triglycerides, metabolic syndrome, log-CRP), reusing each
-hypothesis's exact population/weights for direct comparability.
+H5 was added after H1-H4 were analyzed and was not pre-specified. It responds
+to the argument, common in Peat-oriented online discussion, that serum free
+T3, free T4, and TSH are poor proxies for cellular thyroid status and that
+resting pulse rate, basal body temperature, total cholesterol, and prolactin
+are better. Body temperature and prolactin are not available in these NHANES
+cycles. Pulse rate (`BPXPLS`) and total cholesterol (`LBXTC`) are, so both are
+tested against the outcomes of H1-H3 (triglycerides, metabolic syndrome, and
+log-CRP), reusing each hypothesis's population and weights for direct
+comparability.
 
-This section is explicitly post-hoc and carries a real methodological risk
-flagged before it was built: declaring the pre-registered markers "wrong"
-specifically because they gave unfavorable results, then reaching for markers
-the framework's own proponents prefer, is a textbook unfalsifiable move. This
-section exists to test those markers honestly — including the possibility
-they'd also come back null or wrong-direction — not to rescue H1-H4.
-Corrected separately from H1-H4's multiplicity family for the same reason a
-pre-registered and a post-hoc test shouldn't be pooled into one correction.
+The methodological risk was identified before the section was built.
+Declaring the pre-specified markers invalid because they gave unfavorable
+results, and then turning to the markers the framework's proponents prefer,
+would make the framework unfalsifiable. The section therefore tests these
+markers on their own terms, with the possibility that they also come back
+null or in the wrong direction, and is corrected as a separate family from
+H1-H4.
 
-Pulse-rate models exclude beta-blocker users specifically (`RXDDCN1B ==
-'BETA-ADRENERGIC BLOCKING AGENTS'`), which are narrower than H2's broad
-antihypertensive category, since beta-blockers uniquely suppress heart rate
-pharmacologically, independent of thyroid status.
+Pulse-rate models exclude users of beta-blockers (`BETA-ADRENERGIC BLOCKING
+AGENTS`, plus the `BETA BLOCKERS WITH THIAZIDES` combination subclass). This
+is narrower than H2's antihypertensive category because beta-blockers
+specifically suppress heart rate, independent of thyroid status. Cholesterol
+models exclude users of any `ANTIHYPERLIPIDEMIC AGENTS` drug, since their
+cholesterol reflects the medication.
 
-**Result: pulse rate reinforces H1/H3's disconfirming direction rather than
-rescuing the hypothesis** (all three pulse models significant, same "wrong"
-direction; a descriptive calibration check confirms pulse correlates
-positively with free T3, as expected physiologically, so the two markers are
-telling a consistent story). **Cholesterol's result is directionally
-Peat-consistent but uninformative**, where higher cholesterol predicting worse
-MetS/CRP outcomes is already fully explained by conventional cardiometabolic
-physiology with no thyroid mechanism required; this data cannot distinguish
-that explanation from the Peat framework's. See
-`pipeline/06_build_h5_markers.py`, `notebooks/07_h5_exploratory_markers.ipynb`.
+Result. Pulse rate reinforces the disconfirming direction of H1 and H3. All
+three pulse models are significant and point the same way, and a descriptive
+calibration check confirms that pulse rises with free T3, as expected
+physiologically, so the two markers tell a consistent story. Cholesterol's
+results are consistent with the framework in direction but uninformative,
+because conventional cardiometabolic physiology already explains why higher
+cholesterol accompanies metabolic syndrome and higher CRP, with no thyroid
+mechanism required. See `pipeline/06_build_h5_markers.py` and
+`notebooks/07_h5_exploratory_markers.ipynb`.
 
----
+## Variables used
 
-## Variables used (all verified against real data during analysis, not assumed)
-`LBXT3F`, `LBXT4F`, `LBXTSH1`, `LBXTR`, `LBXTC`, `LBDHDD`, `LBXGLU`, `LBXCRP`,
-`BMXWAIST`, `BMXBMI`, `BPXPLS`, `RIDAGEYR`, `RIAGENDR`, `RIDEXPRG`,
-`MCQ160M`, `WTMEC2YR`, `WTSAF2YR`, `SDMVSTRA`, `SDMVPSU`, `RXDDRGID`,
-`RXDDCN1B` — plus `BPXSY1-4`/`BPXDI1-4` (blood pressure readings) and
-`RXQ_RX`/`RXQ_DRUG` medication/class codes.
+All variables were checked against the data during analysis.
+
+`LBXT3F`, `LBXT4F`, `LBXTT3`, `LBXTT4`, `LBXTSH1`, `LBXTPO`, `LBXTR`, `LBXTC`,
+`LBDHDD`, `LBXGLU`, `LBXCRP`, `BMXWAIST`, `BMXBMI`, `BPXPLS`, `RIDAGEYR`,
+`RIAGENDR`, `RIDEXPRG`, `MCQ160M`, `WTMEC2YR`, `WTSAF2YR`, `WTSA2YR`,
+`SDMVSTRA`, `SDMVPSU`, `RXDDRGID`, `RXDDRUG`, `RXDDCN1B` to `RXDDCN4B`, and
+`RXDDCN1C` to `RXDDCN4C`, plus the blood pressure readings `BPXSY1` to
+`BPXSY4` and `BPXDI1` to `BPXDI4`, and the `RXQ_RX` and `RXQ_DRUG` medication
+files.
